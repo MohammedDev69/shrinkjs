@@ -497,7 +497,7 @@ Real output of that command:
    Original      1.6 kB  (1,554 chars)
    Minimized       38 B  (38 chars)
    Saved          97.6%  10 accepted reductions
-   Duration       32 ms  34 evaluations · 35 cache hits
+   Duration       19 ms  33 evaluations · 33 cache hits
    Status     completed  locally minimal for the enabled reducers
    Signature  INVALID_PRICE
 
