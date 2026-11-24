@@ -1,0 +1,49 @@
+{
+  "orderId": "ord_8f2c1a9d4b",
+  "customer": {
+    "id": "cus_1024",
+    "email": "ada@example.com",
+    "tier": "gold",
+    "locale": "en-GB",
+    "createdAt": "2024-03-11T09:12:44.000Z",
+    "marketingOptIn": true
+  },
+  "items": [
+    { "sku": "KB-001", "name": "Mechanical Keyboard", "quantity": 1, "price": 129.0, "taxRate": 0.2 },
+    { "sku": "MS-014", "name": "Wireless Mouse", "quantity": 2, "price": 39.5, "taxRate": 0.2 },
+    { "sku": "CB-220", "name": "USB-C Cable", "quantity": 3, "price": 9.99, "taxRate": 0.2 },
+    { "sku": "MN-311", "name": "27 inch Monitor", "quantity": 1, "price": 349.0, "taxRate": 0.2 },
+    { "sku": "HD-002", "name": "Headset", "quantity": 1, "price": 89.0, "taxRate": 0.2 },
+    { "sku": "DK-777", "name": "Desk Mat", "quantity": 2, "price": 24.0, "taxRate": 0.2 },
+    { "sku": "LP-005", "name": "Laptop Stand", "quantity": 1, "price": 59.0, "taxRate": 0.2 },
+    { "sku": "WK-091", "name": "Webcam", "quantity": 1, "price": -15.0, "taxRate": 0.2 },
+    { "sku": "SP-440", "name": "Speakers", "quantity": 2, "price": 79.0, "taxRate": 0.2 },
+    { "sku": "CH-808", "name": "Charging Dock", "quantity": 1, "price": 49.0, "taxRate": 0.2 }
+  ],
+  "shipping": {
+    "method": "express",
+    "country": "GB",
+    "postcode": "EC1A 1BB",
+    "cost": 12.5,
+    "estimatedDays": 2
+  },
+  "payment": {
+    "provider": "stripe",
+    "method": "card",
+    "last4": "4242",
+    "currency": "GBP"
+  },
+  "discounts": [
+    { "code": "WELCOME10", "amount": 10.0, "type": "fixed" },
+    { "code": "FREESHIP", "amount": 12.5, "type": "shipping" }
+  ],
+  "metadata": {
+    "source": "web",
+    "version": "2.14.0",
+    "sessionId": "sess_5d0c1b2a",
+    "experiments": { "checkout-redesign": true, "one-click": false },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
+  },
+  "notes": "Customer asked for the parcel to be left with the neighbour.",
+  "createdAt": "2024-06-02T14:31:08.000Z"
+}

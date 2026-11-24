@@ -1,0 +1,56 @@
+name: Release
+
+# Builds and validates the package, then attaches the tarball to a GitHub
+# release. It never publishes to npm: publishing requires explicit
+# authorization, an npm token and a manual `npm publish`.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Only build and validate (no release assets)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - run: npm ci
+      - run: npm run check
+
+      - name: Pack
+        run: npm pack --ignore-scripts
+
+      - name: Inspect tarball
+        run: |
+          node -e "
+            const pkg = require('./package.json');
+            console.log('packed', pkg.name + '@' + pkg.version);
+          "
+          ls -la ./*.tgz
+
+      - name: Upload tarball to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" ./*.tgz --clobber
+
+      - name: Attach build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarball
+          path: "*.tgz"
+          retention-days: 30

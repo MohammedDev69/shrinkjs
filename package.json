@@ -1,0 +1,97 @@
+{
+  "name": "@shrinkjs/core",
+  "version": "0.1.0",
+  "description": "Deterministic input minimization engine: reduce JavaScript/TypeScript inputs to the smallest candidate that still reproduces a user-defined failure.",
+  "keywords": [
+    "minimization",
+    "delta-debugging",
+    "ddmin",
+    "shrinking",
+    "debugging",
+    "test-case-reduction",
+    "reproduce",
+    "typescript",
+    "bug-reproduction",
+    "tooling"
+  ],
+  "license": "MIT",
+  "author": {
+    "name": "Tronex",
+    "url": "https://github.com/MohammedDev69"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MohammedDev69/shrinkjs.git"
+  },
+  "homepage": "https://github.com/MohammedDev69/shrinkjs#readme",
+  "bugs": {
+    "url": "https://github.com/MohammedDev69/shrinkjs/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./vitest": {
+      "types": "./dist/integrations/vitest/index.d.ts",
+      "default": "./dist/integrations/vitest/index.js"
+    },
+    "./jest": {
+      "types": "./dist/integrations/jest/index.d.ts",
+      "default": "./dist/integrations/jest/index.js"
+    },
+    "./reporting": {
+      "types": "./dist/reporting/index.d.ts",
+      "default": "./dist/reporting/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "shrinkjs": "./dist/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "node scripts/clean.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "pretest": "npm run build",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "pretest:coverage": "npm run build",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "bench": "npm run build && node bench/index.mjs",
+    "examples": "npm run build && node examples/run-all.mjs",
+    "verify:package": "npm run build && node scripts/verify-package.mjs",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run build && node scripts/verify-package.mjs",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run check"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.7",
+    "@vitest/coverage-v8": "^5.1.1",
+    "eslint": "^10.15.0",
+    "prettier": "^3.10.1",
+    "publint": "^0.3.25",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.74.0",
+    "vitest": "^5.1.1"
+  }
+}
