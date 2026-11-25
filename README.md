@@ -1,5 +1,10 @@
 # ShrinkJS
 
+[![npm version](https://img.shields.io/npm/v/@shrinkjs/core?style=flat-square&labelColor=16181D&color=16181D)](https://www.npmjs.com/package/@shrinkjs/core)
+[![CI](https://github.com/MohammedDev69/shrinkjs/actions/workflows/ci.yml/badge.svg)](https://github.com/MohammedDev69/shrinkjs/actions/workflows/ci.yml)
+[![types](https://img.shields.io/npm/types/@shrinkjs/core?style=flat-square&labelColor=16181D&color=16181D)](https://www.npmjs.com/package/@shrinkjs/core)
+[![license](https://img.shields.io/npm/l/@shrinkjs/core?style=flat-square&labelColor=16181D&color=16181D)](LICENSE)
+
 **Automatically minimize JavaScript and TypeScript inputs while preserving a user-defined failure or behavior.**
 
 ShrinkJS is a deterministic, local-first minimization engine for bug reproduction. Give it a large input and a predicate that says "this still reproduces the problem", and it searches for a much smaller input that keeps that predicate true — typically turning a 137 kB JSON payload into 31 bytes, or a 100 kB string into the two characters that trigger a parser bug.
