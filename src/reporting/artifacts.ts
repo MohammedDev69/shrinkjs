@@ -155,13 +155,39 @@ export interface GeneratedFileOptions {
   name?: string;
 }
 
-/** Path of `testModule` relative to the artifact directory, as an import specifier. */
-function relativeSpecifier(testModule: string, outputDir: string | undefined): string {
+/**
+ * How generated artifacts should refer to the predicate module.
+ *
+ * A relative path is preferred so an artifact directory stays portable. When the
+ * module and the artifacts live on different Windows drives there is no relative
+ * path, so the absolute location is used instead.
+ */
+interface ModuleReference {
+  /** `true` when `value` is an absolute filesystem path. */
+  absolute: boolean;
+  value: string;
+}
+
+function moduleReference(testModule: string, outputDir: string | undefined): ModuleReference {
   const base = outputDir ?? process.cwd();
   const target = path.resolve(testModule);
-  let relative = path.relative(base, target).split(path.sep).join("/");
-  if (!relative.startsWith(".")) relative = `./${relative}`;
-  return relative;
+  const relative = path.relative(base, target);
+  const onSameDrive = relative !== "" && !path.isAbsolute(relative) && !/^[A-Za-z]:/.test(relative);
+  if (!onSameDrive) return { absolute: true, value: target };
+  const normalised = relative.split(path.sep).join("/");
+  return { absolute: false, value: normalised.startsWith(".") ? normalised : `./${normalised}` };
+}
+
+/** Expression (inside the generated script) that evaluates to an absolute path. */
+function modulePathExpression(reference: ModuleReference): string {
+  return reference.absolute
+    ? JSON.stringify(reference.value.split(path.sep).join("/"))
+    : `join(here, ${JSON.stringify(reference.value)})`;
+}
+
+/** Static import specifier for generated TypeScript tests. */
+function moduleSpecifier(reference: ModuleReference): string {
+  return reference.absolute ? pathToFileURL(reference.value).href : reference.value;
 }
 
 /**
@@ -173,9 +199,10 @@ export function createReproductionScript<T>(
   options: GeneratedFileOptions = {},
 ): string {
   void result;
-  const specifier = options.testModule
-    ? relativeSpecifier(options.testModule, options.outputDir)
-    : "./predicate.mjs";
+  const reference = options.testModule
+    ? moduleReference(options.testModule, options.outputDir)
+    : { absolute: false, value: "./predicate.mjs" };
+  const pathExpression = modulePathExpression(reference);
   const exportName = options.testExport ?? "default";
 
   return `#!/usr/bin/env node
@@ -189,7 +216,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const inputPath = join(here, "minimized-input.json");
-const predicatePath = join(here, ${JSON.stringify(specifier)});
+const predicatePath = ${pathExpression};
 
 const input = JSON.parse(await readFile(inputPath, "utf8"));
 const module_ = await import(pathToFileURL(predicatePath).href);
@@ -218,7 +245,7 @@ export function createRegressionTest<T>(
   options: GeneratedFileOptions & { testModule: string },
 ): string {
   void result;
-  const specifier = relativeSpecifier(options.testModule, options.outputDir);
+  const specifier = moduleSpecifier(moduleReference(options.testModule, options.outputDir));
   const exportName = options.testExport ?? "default";
   const title = (options.name ?? "minimized case").replace(/[\r\n]+/g, " ");
 

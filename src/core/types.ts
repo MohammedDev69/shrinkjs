@@ -39,6 +39,8 @@ export type LimitReason =
   | "max-passes"
   | "max-depth"
   | "max-candidates-per-node"
+  | "max-nodes"
+  | "max-reducer-rounds"
   | "predicate-timeout";
 
 /** Terminal state of a minimization run. */
@@ -89,6 +91,18 @@ export interface ShrinkLimits {
   maxInputSize?: number;
   /** Maximum number of structural passes. Default: 1_000. */
   maxPasses?: number;
+  /**
+   * Maximum nodes examined per structural pass. Bounds pathological inputs with
+   * exponentially many paths (heavily shared graphs) so a run cannot hang.
+   * Default: 1_000_000.
+   */
+  maxNodeVisits?: number;
+  /**
+   * Maximum input nesting depth accepted. Deeper inputs are rejected before any
+   * work starts (`ERR_UNSUPPORTED_INPUT`) instead of risking a stack overflow.
+   * Default: 1_000.
+   */
+  maxInputDepth?: number;
 }
 
 /** Tuning preset. Explicit `limits` values always win over the preset. */
@@ -119,6 +133,19 @@ export interface CustomReducer<T = unknown> {
   enabled?: (input: T, context: ReducerContext) => boolean;
 }
 
+/**
+ * Structural subset of the WHATWG `AbortSignal`.
+ *
+ * ShrinkJS accepts any object with these members (a real `AbortSignal` always
+ * qualifies). Using a structural type keeps the published declarations free of
+ * DOM and `@types/node` globals, so consumers type-check without extra config.
+ */
+export interface AbortSignalLike {
+  readonly aborted: boolean;
+  addEventListener(type: "abort", listener: () => void, options?: { once?: boolean }): void;
+  removeEventListener(type: "abort", listener: () => void): void;
+}
+
 /** Information handed to custom reducers. Contains no input data. */
 export interface ReducerContext {
   /** Attempts so far across the whole run. */
@@ -132,7 +159,7 @@ export interface ReducerContext {
   /** Current structural pass index. */
   readonly pass: number;
   /** Aborted when the caller cancels or a limit is exhausted. */
-  readonly signal: AbortSignal;
+  readonly signal: AbortSignalLike;
   /** Returns true when the run must stop immediately. */
   isExhausted(): boolean;
 }
@@ -204,7 +231,7 @@ export interface ShrinkOptions<T> {
    */
   verifyFinalInput?: boolean;
   onProgress?: (event: ProgressEvent) => void;
-  signal?: AbortSignal;
+  signal?: AbortSignalLike;
 }
 
 export interface StrategyStat {

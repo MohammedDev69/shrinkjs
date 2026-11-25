@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { minimizeTestCase as vitestMinimize } from "../../src/integrations/vitest/index.js";
 import { minimizeTestCase as jestMinimize } from "../../src/integrations/jest/index.js";
-import { createRegressionTest } from "../../src/index.js";
+import { createRegressionTest } from "../../src/reporting/artifacts.js";
 
 let workdir: string;
 

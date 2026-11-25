@@ -32,11 +32,11 @@ export function createStrategyStat(): StrategyStat {
   return { attempts: 0, accepted: 0, rejected: 0 };
 }
 
-/** Reduction percentage, rounded to one decimal, clamped to `[0, 100]`. */
+/** Reduction percentage, rounded to one decimal. Can be negative. */
 export function reductionPercent(originalSize: number, finalSize: number): number {
   if (originalSize <= 0) return 0;
   const raw = ((originalSize - finalSize) / originalSize) * 100;
-  return Math.min(100, Math.max(0, Math.round(raw * 10) / 10));
+  return Math.round(raw * 10) / 10;
 }
 
 export interface ResultParams<T> {
@@ -58,8 +58,10 @@ export interface ResultParams<T> {
 export function buildResult<T>(params: ResultParams<T>): ShrinkResult<T> {
   const stats: ShrinkStats = {
     ...params.stats,
+    // Not clamped: a structural simplification can occasionally cost characters
+    // (`{}` -> `null`), and the numbers must say so.
     reductionPercent: reductionPercent(params.stats.originalSize, params.stats.finalSize),
-    savedChars: Math.max(0, params.stats.originalSize - params.stats.finalSize),
+    savedChars: params.stats.originalSize - params.stats.finalSize,
   };
 
   const result: ShrinkResult<T> = {

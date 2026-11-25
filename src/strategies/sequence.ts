@@ -1,3 +1,4 @@
+import type { AbortSignalLike } from "../core/types.js";
 import { compareSimplicity } from "../utils/compare.js";
 import { deltaDebug } from "./ddmin.js";
 
@@ -11,7 +12,7 @@ export interface ReduceSequenceOptions<T> {
   maxParts?: number;
   /** Hard cap on predicate calls. */
   maxTests?: number;
-  signal?: AbortSignal;
+  signal?: AbortSignalLike;
   /**
    * Optional per-item simplifier. Returns candidate replacements for one item.
    * Applied greedily (first improvement wins) until nothing improves, then a

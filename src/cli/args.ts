@@ -7,6 +7,7 @@ export interface CliOptions {
   testExport?: string;
   output?: string;
   preset?: PresetName;
+  predicateErrors?: "ignore" | "fail" | "preserve";
   maxEvaluations?: number;
   predicateTimeout?: number;
   maxDuration?: number;
@@ -52,6 +53,7 @@ const VALUE_FLAGS = {
   "test-export": "testExport",
   output: "output",
   preset: "preset",
+  "predicate-errors": "predicateErrors",
   redact: "redactKeys",
 } as const;
 
@@ -181,6 +183,15 @@ function assignValue(options: CliOptions, name: string, value: string, errors: s
     return;
   }
 
+  if (name === "predicate-errors") {
+    if (value !== "ignore" && value !== "fail" && value !== "preserve") {
+      errors.push("--predicate-errors must be one of ignore, fail, preserve");
+      return;
+    }
+    options.predicateErrors = value;
+    return;
+  }
+
   if (name in NUMBER_FLAGS) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
@@ -225,6 +236,7 @@ Options:
   --test-export <name>     Named export to use instead of default/test
   --output <dir>           Artifact directory (default: ./shrinkjs-output)
   --preset <name>          fast | balanced | thorough (default: balanced)
+  --predicate-errors <p>   ignore | fail | preserve (default: ignore)
   --max-evaluations <n>    Predicate calls allowed (default: 5000)
   --predicate-timeout <ms> Per-call timeout (default: 5000, 0 disables)
   --max-duration <ms>      Total wall-clock budget (default: 60000)

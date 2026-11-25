@@ -97,6 +97,24 @@ Status of the ShrinkJS v0.1.0 build. `[x]` = implemented and tested, `[ ]` = not
 - [x] Release workflow that builds and attaches artifacts **without publishing**
 - [x] git repository initialized with a sensible `.gitignore`
 
+## Phase 9 — Pre-release audit (adversarial review)
+
+- [x] Shared-reference validation bug (valid acyclic graphs rejected as cyclic)
+- [x] Per-path traversal so shared sub-graphs are reduced at every location
+- [x] Streamed traversal + `maxNodeVisits` limit reported as `max-nodes`
+- [x] Reducer round-cap no longer claims local minimality silently
+- [x] `config.preset` no longer reports "custom" for an empty `limits`
+- [x] `ArrayBuffer` content comparison in the ordering
+- [x] Honest (possibly negative) `reductionPercent` / `savedChars` + warning
+- [x] Root entry free of Node built-ins; artifact writers moved to `/artifacts`
+- [x] Declarations no longer require the `AbortSignal` global
+- [x] `maxInputSize` checked before input validation walks the input
+- [x] `--predicate-errors` CLI flag for CI
+- [x] Export/type/root-purity verification script (`verify:exports`)
+- [x] Regression tests for every fixed defect (`tests/audit/`)
+- [x] Iterative input validation + `maxInputDepth` guard (no raw `RangeError`)
+- [x] Cross-drive artifact paths (absolute-path fallback for generated files)
+
 ## Not done (documented in README roadmap)
 
 - [ ] Resumable runs / persisted search state

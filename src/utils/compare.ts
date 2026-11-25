@@ -173,17 +173,10 @@ function compareCore(a: unknown, b: unknown, depth: number, seen: Set<string>): 
         (b as ArrayBufferView).byteOffset,
         (b as ArrayBufferView).byteLength,
       );
-      if (ba.length !== bb.length) return ba.length < bb.length ? -1 : 1;
-      for (let i = 0; i < ba.length; i += 1) {
-        const x = ba[i] as number;
-        const y = bb[i] as number;
-        if (x !== y) return x < y ? -1 : 1;
-      }
-      return 0;
+      return compareBytes(ba, bb);
     }
     if (a instanceof ArrayBuffer && b instanceof ArrayBuffer) {
-      if (a.byteLength !== b.byteLength) return a.byteLength < b.byteLength ? -1 : 1;
-      return 0;
+      return compareBytes(new Uint8Array(a), new Uint8Array(b));
     }
     if (Array.isArray(a) || Array.isArray(b)) return 0;
 
@@ -209,6 +202,16 @@ function compareCore(a: unknown, b: unknown, depth: number, seen: Set<string>): 
   } finally {
     seen.delete(key);
   }
+}
+
+function compareBytes(a: Uint8Array, b: Uint8Array): number {
+  if (a.length !== b.length) return a.length < b.length ? -1 : 1;
+  for (let i = 0; i < a.length; i += 1) {
+    const x = a[i] as number;
+    const y = b[i] as number;
+    if (x !== y) return x < y ? -1 : 1;
+  }
+  return 0;
 }
 
 /**

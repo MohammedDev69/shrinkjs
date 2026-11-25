@@ -71,7 +71,19 @@ pnpm add -D @shrinkjs/core
 yarn add -D @shrinkjs/core
 ```
 
-Requirements: Node.js **≥ 20.19** (tested on Node 24). The package is ESM-first; CommonJS consumers on Node ≥ 20.19 can `require("@shrinkjs/core")` thanks to native `require(esm)` support.
+Requirements: Node.js **≥ 20.19** (tested on Node 20.19, 22 and 24). The package is ESM-first; CommonJS consumers on Node ≥ 20.19 can `require("@shrinkjs/core")` thanks to native `require(esm)` support.
+
+### Entry points
+
+| Import                     | Contents                                                                                  | Runtime                                                              |
+| -------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `@shrinkjs/core`           | engine, types, errors, ordering/size helpers, pure report builders (JSON, Markdown, diff) | any modern runtime — the root entry has **no** Node built-in imports |
+| `@shrinkjs/core/artifacts` | `writeArtifacts`, generated reproduction/regression sources                               | Node (uses `node:fs`)                                                |
+| `@shrinkjs/core/reporting` | everything above, re-exported together                                                    | Node                                                                 |
+| `@shrinkjs/core/vitest`    | `minimizeTestCase` for Vitest                                                             | Node                                                                 |
+| `@shrinkjs/core/jest`      | `minimizeTestCase` for Jest                                                               | Node                                                                 |
+
+The split exists on purpose: importing the engine must not pull `node:fs` into a bundle. `npm run verify:exports` compiles a strict consumer against this export map and walks the root import graph to prove it.
 
 ## Quick start
 
@@ -231,22 +243,22 @@ Status semantics:
 
 ### `stats`
 
-| Field                             | Meaning                                                        |
-| --------------------------------- | -------------------------------------------------------------- |
-| `originalSize` / `finalSize`      | Characters in the [canonical representation](#measuring-size). |
-| `reductionPercent` / `savedChars` | Derived from the two sizes, rounded to one decimal.            |
-| `evaluations`                     | Predicate invocations (cache hits excluded).                   |
-| `cacheHits`                       | Candidates answered from the cache.                            |
-| `successfulReductions`            | Accepted candidates.                                           |
-| `rejectedCandidates`              | Evaluated candidates that were not accepted.                   |
-| `predicateErrors` / `timeouts`    | Predicate throws and per-call timeouts.                        |
-| `unstableCandidates`              | Candidates discarded because repeated runs disagreed.          |
-| `signatureMismatches`             | Candidates rejected for reproducing a _different_ failure.     |
-| `verification`                    | `{ performed, preserved }` for the fresh-copy re-run.          |
-| `strategies`                      | Per-strategy `{ attempts, accepted, rejected }`.               |
-| `passes`                          | Structural passes executed.                                    |
-| `limitReached`                    | The limit that stopped the run, or `null`.                     |
-| `durationMs`                      | Wall-clock time.                                               |
+| Field                             | Meaning                                                                                                                                                                                          |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `originalSize` / `finalSize`      | Characters in the [canonical representation](#measuring-size).                                                                                                                                   |
+| `reductionPercent` / `savedChars` | Derived from the two sizes, rounded to one decimal. **Can be negative**: a structural simplification may replace `{}` with the simpler-but-longer `null` (a warning is added when that happens). |
+| `evaluations`                     | Predicate invocations (cache hits excluded).                                                                                                                                                     |
+| `cacheHits`                       | Candidates answered from the cache.                                                                                                                                                              |
+| `successfulReductions`            | Accepted candidates.                                                                                                                                                                             |
+| `rejectedCandidates`              | Evaluated candidates that were not accepted.                                                                                                                                                     |
+| `predicateErrors` / `timeouts`    | Predicate throws and per-call timeouts.                                                                                                                                                          |
+| `unstableCandidates`              | Candidates discarded because repeated runs disagreed.                                                                                                                                            |
+| `signatureMismatches`             | Candidates rejected for reproducing a _different_ failure.                                                                                                                                       |
+| `verification`                    | `{ performed, preserved }` for the fresh-copy re-run.                                                                                                                                            |
+| `strategies`                      | Per-strategy `{ attempts, accepted, rejected }`.                                                                                                                                                 |
+| `passes`                          | Structural passes executed.                                                                                                                                                                      |
+| `limitReached`                    | The limit that stopped the run, or `null`.                                                                                                                                                       |
+| `durationMs`                      | Wall-clock time.                                                                                                                                                                                 |
 
 ### Predicates, signatures and stability
 
@@ -300,23 +312,25 @@ Each candidate is evaluated `runs` times; the dominant result must gather at lea
 
 ### Limits and cancellation
 
-| Limit                  | Default (balanced) | Notes                                                               |
-| ---------------------- | ------------------ | ------------------------------------------------------------------- |
-| `maxEvaluations`       | `5_000`            | `0` disables the limit. Cache hits are free.                        |
-| `maxDuration`          | `60_000` ms        | Wall clock. `0` disables.                                           |
-| `predicateTimeout`     | `5_000` ms         | Per call. `0` disables. Timed-out work is abandoned, not cancelled. |
-| `maxDepth`             | `32`               | Containers deeper than this are not descended into.                 |
-| `maxCandidatesPerNode` | `2_000`            | Caps candidates per node per visit.                                 |
-| `maxInputSize`         | `10_000_000` chars | Larger inputs are rejected up front (`ERR_INPUT_TOO_LARGE`).        |
-| `maxPasses`            | `1_000`            | Structural passes (loop guard).                                     |
+| Limit                  | Default (balanced) | Notes                                                                                                 |
+| ---------------------- | ------------------ | ----------------------------------------------------------------------------------------------------- |
+| `maxEvaluations`       | `5_000`            | `0` disables the limit. Cache hits are free.                                                          |
+| `maxDuration`          | `60_000` ms        | Wall clock. `0` disables.                                                                             |
+| `predicateTimeout`     | `5_000` ms         | Per call (each stability run is a call). `0` disables. Timed-out work is abandoned, not cancelled.    |
+| `maxDepth`             | `32`               | Containers deeper than this are not descended into.                                                   |
+| `maxCandidatesPerNode` | `2_000`            | Caps candidates per node per visit.                                                                   |
+| `maxInputSize`         | `10_000_000` chars | Larger inputs are rejected up front (`ERR_INPUT_TOO_LARGE`).                                          |
+| `maxPasses`            | `1_000`            | Structural passes (loop guard).                                                                       |
+| `maxNodeVisits`        | `1_000_000`        | Nodes examined per pass. Bounds graphs with exponentially many paths; hitting it reports `max-nodes`. |
+| `maxInputDepth`        | `1_000`            | Deeper inputs are rejected up front (`ERR_UNSUPPORTED_INPUT`) instead of risking a stack overflow.    |
 
 Presets:
 
-| Preset     | maxEvaluations | maxDuration | predicateTimeout | maxInputSize |
-| ---------- | -------------- | ----------- | ---------------- | ------------ |
-| `fast`     | 500            | 15 s        | 2 s              | 2 M chars    |
-| `balanced` | 5,000          | 60 s        | 5 s              | 10 M chars   |
-| `thorough` | 100,000        | 600 s       | 15 s             | 50 M chars   |
+| Preset     | maxEvaluations | maxDuration | predicateTimeout | maxInputSize | maxNodeVisits | maxInputDepth |
+| ---------- | -------------- | ----------- | ---------------- | ------------ | ------------- | ------------- |
+| `fast`     | 500            | 15 s        | 2 s              | 2 M chars    | 200 k         | 500           |
+| `balanced` | 5,000          | 60 s        | 5 s              | 10 M chars   | 1 M           | 1,000         |
+| `thorough` | 100,000        | 600 s       | 15 s             | 50 M chars   | 10 M          | 2,000         |
 
 Cancellation:
 
@@ -424,7 +438,7 @@ const reduced = await minimizeSequence(recordedToolCalls, {
 | Circular references                                | ❌ (clear error) | ✅                                                                    |
 | Functions, symbols                                 | ❌               | ❌ (cannot be cloned meaningfully)                                    |
 
-`json` mode is strict on purpose: whatever comes out can be `JSON.stringify`-ed. Cycles are rejected with an actionable error instead of being silently corrupted.
+`json` mode is strict on purpose: whatever comes out can be `JSON.stringify`-ed. Cycles are rejected with an actionable error instead of being silently corrupted. Shared (acyclic) references such as `{ left: shared, right: shared }` are valid and supported: every path is reduced independently, even though the two paths start out pointing at the same object.
 
 Cloning rules: own enumerable string-keyed properties are copied (symbol keys and non-enumerable/accessor properties are not), prototypes are preserved, and cycles are handled with a `WeakMap`.
 
@@ -544,6 +558,7 @@ Input is JSON only (or `-` for stdin); the CLI never executes arbitrary project 
 | `--test-export <name>`                                                                                              | Use a named export instead of `default`/`test`.          |
 | `--output <dir>`                                                                                                    | Artifact directory (default `./shrinkjs-output`).        |
 | `--preset <name>`                                                                                                   | `fast` / `balanced` / `thorough`.                        |
+| `--predicate-errors <p>`                                                                                            | `ignore` / `fail` / `preserve` (default `ignore`).       |
 | `--max-evaluations`, `--predicate-timeout`, `--max-duration`, `--max-depth`, `--max-input-size`, `--max-candidates` | Limits.                                                  |
 | `--history`                                                                                                         | Record reduction history.                                |
 | `--no-cache`, `--no-verify`                                                                                         | Disable memoization / final verification.                |
@@ -558,7 +573,8 @@ Exit codes: `0` success (including `limit-reached` and `unstable`), `1` target b
 ## Reports and artifacts
 
 ```ts
-import { createJsonReport, createMarkdownReport, diffValues, writeArtifacts } from "@shrinkjs/core";
+import { diffValues, createJsonReport, createMarkdownReport } from "@shrinkjs/core";
+import { writeArtifacts } from "@shrinkjs/core/artifacts";
 
 const markdown = createMarkdownReport(result, { inputSource: "fixtures/order.json" });
 const report = createJsonReport(result, { redact: { keys: ["token", "password"] } });
@@ -636,13 +652,17 @@ Read this before trusting a result.
 1. **Local, not global, minimality.** ShrinkJS proves "no candidate from the enabled reducers was accepted". Another reducer set — or a persona with more context — could find something smaller.
 2. **Greedy search.** ddmin cannot remove two independent elements at once if removing either alone breaks the predicate. The final full pass mitigates but does not eliminate this.
 3. **Chunk-limited strings and arrays.** Above roughly 512 elements/characters, reduction is chunk-granular (granularity is capped), so results may contain removable single items.
-4. **Predicate errors are ignored by default.** A predicate that throws on every reduced candidate will report "nothing to minimize" while the warnings tell you why. Use `predicateErrors: "fail"` in CI.
+4. **Predicate errors are ignored by default.** A predicate that throws on every reduced candidate will report "nothing to minimize" while the warnings tell you why. Use `predicateErrors: "fail"` in CI (or `--predicate-errors fail`).
 5. **Signature pinning** only works if the predicate reports signatures; with plain booleans, the engine cannot tell one failure from another.
-6. **The predicate may do anything.** It can mutate your data, hit production, or delete files. Guard it.
+6. **The predicate may do anything.** It can hit production, delete files, or mutate the candidate it is given. ShrinkJS clones the caller's input, so _your_ object stays untouched, but a mutating predicate can leave its marks in `minimalInput`. Keep predicates pure.
 7. **`Map`, `Set`, `Date`, `RegExp` and binary values are leaves** in `js` mode: they are cloned and measured but not structurally reduced. Write a custom reducer if you need that.
-8. **Sizes are code-unit counts**, not bytes or compressed size.
-9. **No resumable runs.** Limits stop the process; there is no serialized search state to continue from (on the roadmap).
-10. **Deterministic only for deterministic predicates.** Shrinking a flaky predicate is a heuristic; use `stability` and read `status`.
+8. **Sizes are code-unit counts**, not bytes or compressed size; structural simplification can occasionally make the result _longer_ (reported as a negative reduction with a warning).
+9. **Timeout and cancellation cannot interrupt a running predicate.** A timed-out call is abandoned (its promise is ignored) and an abort takes effect after the in-flight call settles. Set `predicateTimeout` if predicates can hang.
+10. **Object accessor properties are evaluated** during cloning and object reduction (they are read like normal properties); exotic setters on a prototype can therefore observe writes.
+11. **Heavily shared graphs are visited per path** (so every location is reduced); `maxNodeVisits` bounds pathological cases and reports `limit-reached` rather than hanging.
+12. **Extremely deep nesting is rejected up front** (`maxInputDepth`, default 1,000) because cloning and measuring are recursive; raise the limit if you need deeper data.
+13. **No resumable runs.** Limits stop the process; there is no serialized search state to continue from (on the roadmap).
+14. **Deterministic only for deterministic predicates.** Shrinking a flaky predicate is a heuristic; use `stability` and read `status`.
 
 ## Safety and privacy
 
@@ -680,7 +700,7 @@ Total: 431 predicate calls, 0.22 s, all results verified. Numbers are machine-sp
 - Custom reducers (sync/async iterables), public `deltaDebug` and `minimizeSequence`.
 - JSON/Markdown reports, structural diff, redaction, artifact generation.
 - CLI with progress, exit codes, JSON output and artifact writing.
-- Vitest/Jest adapters, 226 tests, benchmarks, CI.
+- Vitest/Jest adapters, 257 tests, benchmarks, CI.
 
 **Planned**
 
@@ -695,12 +715,12 @@ Total: 431 predicate calls, 0.22 s, all results verified. Numbers are machine-sp
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). In short:
+See [CONTRIBUTING.md](CONTRIBUTING.md) and, for the pre-release review, [AUDIT.md](AUDIT.md) (findings, fixes, remaining issues, unverified claims). Design and algorithm notes live in [DESIGN.md](DESIGN.md). In short:
 
 ```bash
 npm install
 npm run build
-npm test            # 226 tests
+npm test            # 257 tests
 npm run check       # typecheck + lint + format + tests + build + package validation
 npm run bench
 npm run examples

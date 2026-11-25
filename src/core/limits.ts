@@ -1,5 +1,5 @@
 import { ShrinkConfigError } from "./errors.js";
-import type { LimitReason, PresetName, ShrinkLimits } from "./types.js";
+import type { AbortSignalLike, LimitReason, PresetName, ShrinkLimits } from "./types.js";
 
 export const PRESETS: Record<PresetName, Required<ShrinkLimits>> = {
   fast: {
@@ -10,6 +10,8 @@ export const PRESETS: Record<PresetName, Required<ShrinkLimits>> = {
     maxCandidatesPerNode: 200,
     maxInputSize: 2_000_000,
     maxPasses: 200,
+    maxNodeVisits: 200_000,
+    maxInputDepth: 500,
   },
   balanced: {
     maxEvaluations: 5_000,
@@ -19,6 +21,8 @@ export const PRESETS: Record<PresetName, Required<ShrinkLimits>> = {
     maxCandidatesPerNode: 2_000,
     maxInputSize: 10_000_000,
     maxPasses: 1_000,
+    maxNodeVisits: 1_000_000,
+    maxInputDepth: 1_000,
   },
   thorough: {
     maxEvaluations: 100_000,
@@ -28,6 +32,8 @@ export const PRESETS: Record<PresetName, Required<ShrinkLimits>> = {
     maxCandidatesPerNode: 20_000,
     maxInputSize: 50_000_000,
     maxPasses: 10_000,
+    maxNodeVisits: 10_000_000,
+    maxInputDepth: 2_000,
   },
 };
 
@@ -39,6 +45,8 @@ const LIMIT_KEYS = [
   "maxCandidatesPerNode",
   "maxInputSize",
   "maxPasses",
+  "maxNodeVisits",
+  "maxInputDepth",
 ] as const satisfies ReadonlyArray<keyof ShrinkLimits>;
 
 export function resolveLimits(
@@ -68,13 +76,13 @@ export function resolveLimits(
 export class Budget {
   readonly limits: Required<ShrinkLimits>;
   readonly startedAt = Date.now();
-  readonly signal: AbortSignal;
+  readonly signal: AbortSignalLike;
 
   evaluations = 0;
   limitReached: LimitReason | null = null;
 
   private readonly controller = new AbortController();
-  private readonly userSignal: AbortSignal | undefined;
+  private readonly userSignal: AbortSignalLike | undefined;
   private readonly onUserAbort = (): void => {
     this.cancelled = true;
     this.controller.abort(new Error("cancelled"));
@@ -82,7 +90,7 @@ export class Budget {
 
   cancelled = false;
 
-  constructor(limits: Required<ShrinkLimits>, userSignal?: AbortSignal) {
+  constructor(limits: Required<ShrinkLimits>, userSignal?: AbortSignalLike) {
     this.limits = limits;
     this.userSignal = userSignal;
     if (userSignal) {

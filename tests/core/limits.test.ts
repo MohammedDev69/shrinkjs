@@ -137,4 +137,27 @@ describe("cancellation", () => {
     await shrink({ input: 1, test, signal: controller.signal });
     expect(test).not.toHaveBeenCalled();
   });
+
+  it("stops after the in-flight predicate settles when aborted", async () => {
+    const controller = new AbortController();
+    const started = Date.now();
+    const result = await shrink({
+      input: { a: 1, b: 2, c: 3 },
+      test: async (candidate) => {
+        // A real I/O-shaped predicate: slow but finite. A per-call timeout is
+        // deliberately disabled, so cancellation can only take effect once the
+        // current call settles — that is the documented guarantee.
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        controller.abort();
+        return (candidate as { a?: number }).a === 1;
+      },
+      limits: { predicateTimeout: 0, maxDuration: 0, maxEvaluations: 1_000 },
+      signal: controller.signal,
+      verifyFinalInput: false,
+    });
+
+    expect(result.status).toBe("cancelled");
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(result.stats.evaluations).toBeLessThan(10);
+  });
 });

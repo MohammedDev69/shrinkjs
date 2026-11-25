@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -362,5 +362,77 @@ describe("runCli", () => {
     if (!existsSync(binPath)) return;
     const output = execFileSync(process.execPath, [binPath, "--version"], { encoding: "utf8" });
     expect(output.trim()).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it("handles file paths containing spaces", async () => {
+    const spacedDir = path.join(workdir, "dir with spaces");
+    await mkdir(spacedDir, { recursive: true });
+    const inputPath = path.join(spacedDir, "in put.json");
+    await writeFile(
+      inputPath,
+      JSON.stringify({ users: [{ name: "Bob", extra: 1 }], meta: { x: 1 } }),
+      "utf8",
+    );
+    const predicatePath = path.join(spacedDir, "pre dicate.mjs");
+    await writeFile(
+      predicatePath,
+      'export default (input) => Array.isArray(input.users) && input.users.some((u) => u.name === "Bob");\n',
+      "utf8",
+    );
+    const outputDir = path.join(spacedDir, "out dir");
+
+    const { io, stderr } = makeIo();
+    const code = await runCli(
+      ["minimize", "--input", inputPath, "--test", predicatePath, "--output", outputDir, "--quiet"],
+      io,
+    );
+    expect(stderr()).toBe("");
+    expect(code).toBe(0);
+
+    const result = JSON.parse(await readFile(path.join(outputDir, "result.json"), "utf8")) as {
+      minimalInput: unknown;
+    };
+    expect(result.minimalInput).toEqual({ users: [{ name: "Bob" }] });
+  });
+
+  it("supports --predicate-errors fail for CI", async () => {
+    const { input } = await writeFixture();
+    const throwing = path.join(workdir, "throwing.mjs");
+    await writeFile(
+      throwing,
+      `export default function test(candidate) {
+  if (!Array.isArray(candidate.users)) throw new TypeError("no users");
+  return candidate.users.some((user) => user.name === "Bob");
+}
+`,
+      "utf8",
+    );
+
+    const { io, stdout } = makeIo();
+    const code = await runCli(
+      [
+        "minimize",
+        "--input",
+        input,
+        "--test",
+        throwing,
+        "--predicate-errors",
+        "fail",
+        "--output",
+        path.join(workdir, "strict"),
+        "--no-progress",
+      ],
+      io,
+    );
+
+    expect(code).toBe(1);
+    expect(stdout()).toContain("ERR_PREDICATE_FAILED");
+  });
+
+  it("rejects an invalid --predicate-errors value", async () => {
+    const { io, stderr } = makeIo();
+    const code = await runCli(["minimize", "--predicate-errors", "explode"], io);
+    expect(code).toBe(2);
+    expect(stderr()).toContain("--predicate-errors must be one of");
   });
 });

@@ -2,6 +2,7 @@ export { minimize, shrink } from "./core/shrink.js";
 export { VERSION } from "./version.js";
 
 export type {
+  AbortSignalLike,
   CustomReducer,
   HistoryEntry,
   HistoryOptions,
@@ -52,28 +53,22 @@ export { formatPath } from "./utils/paths.js";
 export type { Path, PathSegment } from "./utils/paths.js";
 export { toJsonSafe, toJsonString } from "./utils/json-safe.js";
 
-export {
-  artifactUrl,
-  createJsonReport,
-  createMarkdownReport,
-  createRegressionTest,
-  createReproductionScript,
-  diffValues,
-  formatDiff,
-  redactValue,
-  serializeJsonReport,
-  writeArtifacts,
-} from "./reporting/index.js";
+export { createJsonReport, serializeJsonReport } from "./reporting/json.js";
+export { createMarkdownReport } from "./reporting/markdown.js";
+export { diffValues, formatDiff, valueAt } from "./reporting/diff.js";
+export { redactValue } from "./reporting/redact.js";
 export type {
-  ArtifactKind,
-  ArtifactOptions,
-  ArtifactResult,
   DiffEntry,
   DiffKind,
   DiffOptions,
-  GeneratedFileOptions,
   JsonReport,
   JsonReportOptions,
   MarkdownReportOptions,
   RedactOptions,
 } from "./reporting/index.js";
+
+// Report *writers* that touch the filesystem are Node-only and therefore live in
+// `@shrinkjs/core/artifacts` (also re-exported from `@shrinkjs/core/reporting`).
+// Keeping them out of the root entry means `import { shrink } from
+// "@shrinkjs/core"` never pulls a `node:` built-in, so the engine works in any
+// modern runtime or bundler.

@@ -6,15 +6,17 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createJsonReport,
   createMarkdownReport,
-  createRegressionTest,
-  createReproductionScript,
   diffValues,
   formatDiff,
   serializeJsonReport,
   shrink,
-  writeArtifacts,
   type ShrinkResult,
 } from "../../src/index.js";
+import {
+  createRegressionTest,
+  createReproductionScript,
+  writeArtifacts,
+} from "../../src/reporting/artifacts.js";
 
 let workdir: string;
 
@@ -287,4 +289,38 @@ describe("artifacts", () => {
     expect(script).toContain("#!/usr/bin/env node");
     expect(test).toContain("ShrinkJS regression: case");
   });
+
+  it.skipIf(process.platform !== "win32")(
+    "falls back to an absolute path when artifacts and predicate live on different drives",
+    async () => {
+      // The OS temp dir is on C:, the repository is on E: (or vice versa) — there
+      // is no relative path between them.
+      const outputDir = path.resolve(process.cwd(), ".tmp", "audit-cross-drive");
+      const predicatePath = path.join(workdir, "cross-drive-predicate.mjs");
+      await writeFile(
+        predicatePath,
+        `export default (input) => Array.isArray(input.items) && input.items.some((item) => item.price < 0);\n`,
+        "utf8",
+      );
+
+      try {
+        const result = await minimized();
+        const written = await writeArtifacts(result, {
+          outputDir,
+          testModule: predicatePath,
+          overwrite: true,
+        });
+
+        const script = await readFile(path.join(written.outputDir, "reproduction.mjs"), "utf8");
+        expect(script).not.toContain("join(here, " + JSON.stringify("../"));
+
+        const output = execFileSync(process.execPath, [path.join(written.outputDir, "reproduction.mjs")], {
+          encoding: "utf8",
+        });
+        expect(output).toContain("still reproduces");
+      } finally {
+        await rm(outputDir, { recursive: true, force: true });
+      }
+    },
+  );
 });

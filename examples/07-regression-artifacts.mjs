@@ -9,7 +9,8 @@
  */
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { shrink, writeArtifacts } from "../dist/index.js";
+import { shrink } from "../dist/index.js";
+import { writeArtifacts } from "../dist/reporting/artifacts.js";
 import { parseError } from "./lib/predicates.mjs";
 import { parseExpression } from "./lib/validation.mjs";
 

@@ -16,11 +16,21 @@ describe("public API surface", () => {
     expect(typeof api.diffValues).toBe("function");
     expect(typeof api.createJsonReport).toBe("function");
     expect(typeof api.createMarkdownReport).toBe("function");
-    expect(typeof api.writeArtifacts).toBe("function");
-    expect(typeof api.createRegressionTest).toBe("function");
-    expect(typeof api.createReproductionScript).toBe("function");
     expect(typeof api.formatPath).toBe("function");
     expect(typeof api.resolveLimits).toBe("function");
+  });
+
+  it("keeps filesystem writers out of the root entry", async () => {
+    // They live in `@shrinkjs/core/artifacts` so the root is runtime-agnostic.
+    expect(api).not.toHaveProperty("writeArtifacts");
+    expect(api).not.toHaveProperty("createReproductionScript");
+    expect(api).not.toHaveProperty("createRegressionTest");
+    expect(api).not.toHaveProperty("artifactUrl");
+
+    const artifacts = await import("../../src/reporting/artifacts.js");
+    expect(typeof artifacts.writeArtifacts).toBe("function");
+    expect(typeof artifacts.createReproductionScript).toBe("function");
+    expect(typeof artifacts.createRegressionTest).toBe("function");
   });
 
   it("exports the error classes with stable codes", () => {

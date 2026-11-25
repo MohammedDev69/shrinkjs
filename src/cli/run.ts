@@ -125,6 +125,7 @@ async function runMinimize(options: CliOptions, io: CliIo, style: Style): Promis
     input,
     test: predicate.fn as (candidate: unknown) => boolean | Promise<boolean>,
     ...(options.preset === undefined ? {} : { preset: options.preset }),
+    ...(options.predicateErrors === undefined ? {} : { predicateErrors: options.predicateErrors }),
     ...(options.history === true ? { history: { enabled: true, maxEntries: 500 } } : {}),
     ...(options.noCache === true ? { cache: false } : {}),
     ...(options.verify === false ? { verifyFinalInput: false } : {}),

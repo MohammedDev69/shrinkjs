@@ -100,7 +100,9 @@ export async function shrink<T>(options: ShrinkOptions<T>): Promise<ShrinkResult
     fail("signal must be an AbortSignal");
   }
 
-  assertSupportedInput(options.input, mode);
+  // Validation first: it is an allocation-free iterative walk that also
+  // enforces the depth ceiling, so later recursive helpers are safe.
+  assertSupportedInput(options.input, mode, limits.maxInputDepth);
 
   const originalSize = sizeOf(options.input);
   if (limits.maxInputSize > 0 && originalSize > limits.maxInputSize) {
@@ -110,9 +112,12 @@ export async function shrink<T>(options: ShrinkOptions<T>): Promise<ShrinkResult
     );
   }
 
+  const hasLimitOverrides =
+    options.limits !== undefined && Object.values(options.limits).some((value) => value !== undefined);
+
   const configSummary: ResolvedConfigSummary = {
     mode,
-    preset: preset ?? (options.limits === undefined ? "balanced" : "custom"),
+    preset: preset ?? (hasLimitOverrides ? "custom" : "balanced"),
     predicateErrors,
     preserveSignature: options.preserveSignature ?? true,
     cache: options.cache ?? true,

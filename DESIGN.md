@@ -105,15 +105,23 @@ run()
  └─ assemble result (status, stats, history)
 ```
 
-A **structural pass** collects every addressable node in pre-order and visits each one:
+A **structural pass** streams every addressable node in pre-order and visits each one:
 
 ```text
-visitNode(path, value):
-  for strategy in [nullish, boolean, number, string, array, object]:
-     if strategy.matches(value):
-        if strategy.reduce(value, ctx) accepted something: return true
-  return false
+for each path yielded by walkNodes(root, maxDepth, maxNodeVisits):
+  if path sorts before the resume point: skip
+  if visit(path) accepted: resume from this path
 ```
+
+`walkNodes` is a generator: memory stays O(depth) instead of materialising the whole node list. It tracks an **ancestor stack** (not a global visited set), so a sub-object shared by two parents is reduced at _both_ paths while true cycles are cut. `maxNodeVisits` bounds graphs with exponentially many paths; when the bound is hit the run reports `limit-reached` (`max-nodes`) instead of claiming minimality over nodes it never examined.
+
+`visitNode(path, value)`:
+for strategy in [nullish, boolean, number, string, array, object]:
+if strategy.matches(value):
+if strategy.reduce(value, ctx) accepted something: return true
+return false
+
+````
 
 `ctx.tryCandidate(x)` replaces the node with `x` in the current best input, checks that the whole input became strictly simpler, evaluates the predicate, and — on success — commits `x` as the new best. Strategies therefore never touch engine internals; they propose values and the engine decides.
 
@@ -216,7 +224,7 @@ evaluate(candidate):
       majority must reach `requiredMatches`
       signatures must agree, otherwise the candidate is "unstable"
   cache the outcome (bounded map, cleared when full)
-```
+````
 
 - **Timeout**: `Promise.race` against a timer. The predicate's promise is not cancellable — its later settlement is swallowed (`call.catch(() => undefined)`) so a slow callback cannot produce an unhandled rejection. This is documented: the work is abandoned, not stopped.
 - **Policy** (`predicateErrors`): `ignore` (default) rejects the candidate and counts the error; `fail` aborts the run; `preserve` counts the exception as a reproduction and warns once.
@@ -232,10 +240,25 @@ After the search, the engine deep-clones the result and evaluates it once more (
 Three independent guards:
 
 1. **Monotone measure** — accepts strictly decrease the simplicity ordering, so the search cannot revisit a state.
-2. **Budget** — `maxEvaluations`, `maxDuration`, `maxPasses`, `maxCandidatesPerNode`, `maxDepth`, `maxInputSize`. `Budget` records the _first_ reason and aborts the internal `AbortSignal`, which strategies poll via `ctx.isExhausted()`.
-3. **Abort signal** — the caller's `AbortSignal` is combined with the internal one; cancellation returns the best-so-far with `status: "cancelled"`.
+2. **Budget** — `maxEvaluations`, `maxDuration`, `maxPasses`, `maxNodeVisits`, `maxInputDepth`, `maxCandidatesPerNode`, `maxDepth`, `maxInputSize`. `Budget` records the _first_ reason and aborts the internal `AbortSignal`, which strategies poll via `ctx.isExhausted()`.
+3. **Abort signal** — the caller's `AbortSignal` is combined with the internal one; cancellation returns the best-so-far with `status: "cancelled"`. An in-flight predicate call cannot be interrupted: the abort takes effect when it settles (a `predicateTimeout` bounds the wait).
 
-`0` disables a numeric limit. `maxInputSize` is checked before any evaluation (cheap rejection of pathological inputs).
+`0` disables a numeric limit. `maxInputSize` is checked before any evaluation (cheap rejection of pathological inputs). `maxInputDepth` is enforced by the iterative input validator before cloning, because the clone, size and serialisation helpers are recursive; this turns a potential `RangeError` into `ERR_UNSUPPORTED_INPUT` with the offending path.
+
+Reducer loops are bounded twice: per accept-chain (`max-reducer-rounds`, 10k) and per engine alternation (1k). If either guard trips, the run reports `limit-reached` instead of pretending it reached a fixpoint.
+
+## Packaging
+
+The published surface is split by runtime, because a debugging library should not force `node:fs` into a browser bundle:
+
+| Entry                | Contents                                                         | Node built-ins  |
+| -------------------- | ---------------------------------------------------------------- | --------------- |
+| `.`                  | engine, evaluator, strategies, utils, pure report builders       | none            |
+| `./artifacts`        | `writeArtifacts`, generated reproduction/regression sources      | yes (`node:fs`) |
+| `./reporting`        | the pure builders re-exported together with the artifact writers | yes             |
+| `./vitest`, `./jest` | adapters that call the core and (optionally) the artifact writer | yes             |
+
+`scripts/verify-exports.mjs` enforces this: it links the package into a temporary `node_modules`, imports every subpath as ESM, `require()`s the root, compiles a strict `node16` consumer (`types: []`, no DOM lib) against the declarations, and walks the built root import graph to assert no `node:` specifier is reachable.
 
 ## Results and honest reporting
 

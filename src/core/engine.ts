@@ -1,13 +1,14 @@
 import { deepClone } from "../utils/clone.js";
 import { compareSimplicity, isSimpler } from "../utils/compare.js";
 import {
-  collectNodes,
   comparePaths,
   formatPath,
   getAtPath,
   replaceAtPath,
+  walkNodes,
   type Path,
   type PathSegment,
+  type WalkState,
 } from "../utils/paths.js";
 import { sizeOf } from "../utils/serialize.js";
 import { builtinStrategies } from "../strategies/registry.js";
@@ -51,7 +52,8 @@ export interface EngineConfig<T> {
   configSummary: ResolvedConfigSummary;
 }
 
-const MAX_REDUCER_ROUNDS = 20;
+const MAX_REDUCER_ACCEPT_ROUNDS = 10_000;
+const MAX_ENGINE_ROUNDS = 1_000;
 
 /**
  * The minimization engine.
@@ -155,16 +157,20 @@ export class ShrinkEngine<T> {
 
       let rounds = 0;
       let changed = true;
-      while (changed && !this.budget.isExhausted() && rounds < MAX_REDUCER_ROUNDS) {
+      while (changed && !this.budget.isExhausted()) {
         rounds += 1;
+        if (rounds > MAX_ENGINE_ROUNDS) {
+          this.budget.exhaust("max-reducer-rounds");
+          break;
+        }
         changed = false;
         // Custom reducers run first: for opaque encodings (base64, signed
         // payloads) they can often shrink far more than structural candidate
         // generation, and running them early avoids wasting evaluations on
         // string mutations that cannot decode.
-        if (this.config.reducers.length > 0 && (await this.customReducerLoop())) changed = true;
+        if (await this.customReducerLoop()) changed = true;
         await this.structuralLoop();
-        if (this.config.reducers.length > 0 && (await this.customReducerLoop())) changed = true;
+        if (await this.customReducerLoop()) changed = true;
       }
 
       if (this.hadUnstable && this.status === "completed") this.status = "unstable";
@@ -247,19 +253,31 @@ export class ShrinkEngine<T> {
       }
       iterations += 1;
 
-      const nodes = collectNodes(this.best, this.config.limits.maxDepth);
-      const queue =
-        startPath.length === 0 ? nodes : nodes.filter((node) => comparePaths(node.path, startPath) >= 0);
-
+      // The walk is streamed (O(depth) memory) and visits every *path*, so a
+      // sub-object shared by two parents is reduced at both locations.
+      const state: WalkState = { visits: 0, truncated: false };
       let accepted = false;
-      for (const node of queue) {
+
+      for (const node of walkNodes(
+        this.best,
+        this.config.limits.maxDepth,
+        this.config.limits.maxNodeVisits,
+        state,
+      )) {
         if (this.budget.isExhausted()) break;
+        if (startPath.length > 0 && comparePaths(node.path, startPath) < 0) continue;
         if (await this.visitNode(node.path, node.depth, node.value)) {
           accepted = true;
           startPath = node.path;
           this.pass += 1;
           break;
         }
+      }
+
+      if (!accepted && state.truncated) {
+        // A pass that did not examine every node cannot justify "local".
+        this.budget.exhaust("max-nodes");
+        break;
       }
 
       if (!accepted) {
@@ -407,23 +425,33 @@ export class ShrinkEngine<T> {
     if (this.config.reducers.length === 0) return false;
     const reducers = [...this.config.reducers].sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
 
+    let improved = false;
     let rounds = 0;
-    while (!this.budget.isExhausted() && rounds < MAX_REDUCER_ROUNDS) {
+    while (!this.budget.isExhausted()) {
       rounds += 1;
-      let improved = false;
+      if (rounds > MAX_REDUCER_ACCEPT_ROUNDS) {
+        // Long-but-productive chains are legitimate; stop only when the guard
+        // trips, and report it rather than silently claiming minimality.
+        this.budget.exhaust("max-reducer-rounds");
+        return improved;
+      }
+
+      let roundImproved = false;
       for (const reducer of reducers) {
         if (this.budget.isExhausted()) break;
         const ctx = this.reducerContext();
         if (reducer.enabled && !reducer.enabled(this.best, ctx)) continue;
         const produced = await reducer.reduce(this.best, ctx);
         if (await this.consumeCandidates(produced, reducer.name)) {
-          improved = true;
+          roundImproved = true;
           break;
         }
       }
-      if (!improved) return false;
+
+      if (!roundImproved) break;
+      improved = true;
     }
-    return true;
+    return improved;
   }
 
   private async consumeCandidates(source: unknown, strategy: string): Promise<boolean> {
@@ -511,9 +539,15 @@ export class ShrinkEngine<T> {
   }
 
   private buildSuccess(): ShrinkResult<T> {
-    this.syncEvaluatorStats();
+    this.finalizeStats();
     if (this.budget.cancelled) {
       this.warn("Minimization was cancelled; the result is the best input found so far.");
+    }
+    if (this.stats.finalSize > this.stats.originalSize) {
+      this.warn(
+        `The minimized input is ${this.stats.finalSize - this.stats.originalSize} characters larger than the original: a structural simplification replaced a container with a simpler but longer value (for example \`{}\` -> \`null\`). ` +
+          "ShrinkJS orders by structural simplicity, not by character count.",
+      );
     }
     if (this.config.predicateErrors === "ignore" && this.stats.predicateErrors > 0) {
       const first = this.evaluator.lastError;
@@ -523,7 +557,6 @@ export class ShrinkEngine<T> {
         }. Set predicateErrors: "fail" to abort on the first error instead.`,
       );
     }
-    this.finalizeStats();
     const status = this.finalStatus();
     return buildResult({
       status,

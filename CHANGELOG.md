@@ -49,10 +49,46 @@ behaviour and types.
 - **Integrations** — `@shrinkjs/core/vitest` and `@shrinkjs/core/jest` adapters
   that minimize inside a test and write artifacts; the core stays free of any
   test-framework dependency.
-- **Quality** — strict TypeScript with a typed generic API, 226 tests, coverage
+- **Quality** — strict TypeScript with a typed generic API, 257 tests, coverage
   thresholds, ESLint + Prettier, benchmarks with a correctness gate, seven
   runnable examples, package validation (publint + tarball audit) and CI on
   Node 20/22/24.
+
+### Hardening (pre-release audit)
+
+An adversarial audit found and fixed these defects before the first publish;
+each has a regression test in `tests/audit/regressions.test.ts`.
+
+- **Shared (acyclic) references were rejected as "circular"** in `json` mode,
+  even though they are perfectly serializable. Validation now distinguishes
+  "is its own ancestor" from "seen before".
+- **Reduction skipped all but the first path of a shared graph** yet still
+  claimed `minimality: "local"`. The traversal now walks every path (with an
+  ancestor stack for cycles), streaming nodes instead of materialising a list,
+  and a new `maxNodeVisits` limit is reported as `max-nodes` when hit.
+- **Long custom-reducer chains stopped silently** at ~800 accepted candidates
+  and still reported `minimality: "local"`. The per-loop caps were raised and
+  now report `max-reducer-rounds` when they trip.
+- **`config.preset` reported `"custom"`** whenever a `limits` object was passed,
+  even an empty one.
+- **`ArrayBuffer` values of equal length compared as equal**, ignoring content.
+- **`reductionPercent`/`savedChars` were clamped at 0** even when structural
+  simplification made the result longer; they are now honest (negative) and the
+  run adds a warning.
+- **The root entry pulled `node:fs`** through the reporting barrel, breaking
+  bundlers. Artifact writers moved to `@shrinkjs/core/artifacts`; the root entry
+  now has no Node built-in imports (verified by walking the built import graph).
+- **Declarations required the `AbortSignal` global**, failing strict consumers
+  without DOM/`@types/node`. The public API now uses a structural
+  `AbortSignalLike`.
+- **`maxInputSize` was checked after input validation**, walking oversized inputs
+  before rejecting them.
+- Added `--predicate-errors` to the CLI (useful for CI), and an audit note that
+  a `{}` → `null` simplification can grow the input.
+- **Deeply nested input (thousands of levels) crashed with a raw `RangeError`**
+  from recursive cloning. Validation is now iterative and enforces a configurable
+  `maxInputDepth` (default 1,000), rejecting deeper input with
+  `ERR_UNSUPPORTED_INPUT` and the offending path.
 
 ### Notes
 

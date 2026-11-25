@@ -43,40 +43,83 @@ export interface NodeRef {
   depth: number;
 }
 
+/** Progress of a {@link walkNodes} traversal. */
+export interface WalkState {
+  /** Nodes yielded so far. */
+  visits: number;
+  /** True when `maxVisits` stopped the walk before it was complete. */
+  truncated: boolean;
+}
+
 /**
- * Depth-first pre-order collection of addressable nodes.
+ * Lazily yields addressable nodes depth-first in pre-order.
+ *
+ * Every path is visited, including paths that reach the same object twice: the
+ * engine addresses nodes *by path*, so `{a: shared, b: shared}` has two
+ * independent subtrees to reduce. Cycles are cut with an ancestor stack (an
+ * object that is its own ancestor is not descended into again).
  *
  * Only arrays and plain-ish objects are traversed: Map/Set/Date/RegExp/binary
- * values are leaves (documented limitation). Shared sub-objects are visited
- * once, which also makes cycles safe.
+ * values are leaves (documented limitation).
+ *
+ * `maxVisits` bounds the walk so pathological sharing graphs (which have
+ * exponentially many paths) cannot hang the process; the caller can inspect
+ * `state.truncated` and report the limit honestly.
  */
-export function collectNodes(root: unknown, maxDepth: number): NodeRef[] {
-  const nodes: NodeRef[] = [];
-  const seen = new WeakSet<object>();
+export function* walkNodes(
+  root: unknown,
+  maxDepth: number,
+  maxVisits = Number.POSITIVE_INFINITY,
+  state: WalkState = { visits: 0, truncated: false },
+): Generator<NodeRef> {
+  const ancestors = new WeakSet<object>();
 
-  const visit = (value: unknown, path: PathSegment[], depth: number): void => {
-    nodes.push({ path, value, depth });
+  function* visit(value: unknown, path: PathSegment[], depth: number): Generator<NodeRef> {
+    if (state.visits >= maxVisits) {
+      state.truncated = true;
+      return;
+    }
+    state.visits += 1;
+    yield { path, value, depth };
+
     if (depth >= maxDepth) return;
     if (value === null || typeof value !== "object") return;
     const object = value as object;
-    if (seen.has(object)) return;
-    seen.add(object);
-
-    if (Array.isArray(object)) {
-      for (let i = 0; i < object.length; i += 1) visit(object[i], [...path, i], depth + 1);
+    if (ancestors.has(object)) return;
+    if (
+      object instanceof Date ||
+      object instanceof RegExp ||
+      object instanceof Map ||
+      object instanceof Set
+    ) {
       return;
     }
-    if (object instanceof Date || object instanceof RegExp || object instanceof Map || object instanceof Set)
-      return;
     if (ArrayBuffer.isView(object) || object instanceof ArrayBuffer) return;
 
-    for (const key of Object.keys(object)) {
-      visit((object as Record<string, unknown>)[key], [...path, key], depth + 1);
+    ancestors.add(object);
+    try {
+      if (Array.isArray(object)) {
+        for (let i = 0; i < object.length; i += 1) yield* visit(object[i], [...path, i], depth + 1);
+      } else {
+        for (const key of Object.keys(object)) {
+          yield* visit((object as Record<string, unknown>)[key], [...path, key], depth + 1);
+        }
+      }
+    } finally {
+      ancestors.delete(object);
     }
-  };
+  }
 
-  visit(root, [], 0);
-  return nodes;
+  yield* visit(root, [], 0);
+}
+
+/**
+ * Eager variant of {@link walkNodes}, kept for callers that want a materialised
+ * list (tests, tooling). The engine streams with `walkNodes` instead so memory
+ * stays O(depth).
+ */
+export function collectNodes(root: unknown, maxDepth: number): NodeRef[] {
+  return [...walkNodes(root, maxDepth)];
 }
 
 /** Human readable path such as `$.users[2].name`. */

@@ -15,6 +15,8 @@ function isPlainPrototype(proto: object | null): boolean {
  *
  * Limitations (documented): non-enumerable properties, accessor descriptors
  * and private class fields are not copied. Functions are copied by reference.
+ * Inputs deeper than `maxInputDepth` are rejected by `assertSupportedInput`
+ * before this function runs, which keeps the recursion bounded.
  */
 export function deepClone<T>(value: T, seen: WeakMap<object, unknown> = new WeakMap()): T {
   if (value === null || typeof value !== "object") {
@@ -82,91 +84,135 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
   return isPlainPrototype(proto);
 }
 
+interface Frame {
+  node: unknown;
+  at: string;
+  depth: number;
+  /** When set, this frame only pops the object off the ancestor stack. */
+  exit?: object;
+}
+
 /**
  * Validates that a value can be handled by the selected mode.
- * Throws {@link ShrinkUnsupportedInputError} with an actionable message.
+ *
+ * - Rejects unsupported types with the path of the offending value.
+ * - Rejects true cycles in `json` mode (shared acyclic references are fine).
+ * - Rejects inputs nesting deeper than `maxDepth`, because every later step
+ *   (clone, measure, compare) is recursive; this turns a potential
+ *   `RangeError: Maximum call stack size exceeded` into an actionable error.
+ *
+ * Implemented with an explicit stack so validation itself cannot overflow.
  */
-export function assertSupportedInput(value: unknown, mode: InputMode, path = "$"): void {
-  const seen = new WeakSet<object>();
+export function assertSupportedInput(value: unknown, mode: InputMode, maxDepth = 1_000, path = "$"): void {
+  const ancestors = new WeakSet<object>();
+  const validated = new WeakSet<object>();
+  const stack: Frame[] = [{ node: value, at: path, depth: 0 }];
 
-  const visit = (node: unknown, at: string): void => {
-    if (node === null) return;
+  while (stack.length > 0) {
+    const frame = stack.pop() as Frame;
+    if (frame.exit) {
+      ancestors.delete(frame.exit);
+      continue;
+    }
+
+    const node = frame.node;
+    if (node === null) continue;
     const type = typeof node;
-    if (type === "string" || type === "number" || type === "boolean" || type === "undefined") return;
+    if (type === "string" || type === "number" || type === "boolean" || type === "undefined") continue;
     if (type === "bigint") {
       if (mode === "json") {
         throw new ShrinkUnsupportedInputError(
-          `BigInt at ${at} is not JSON-compatible. Use mode: "js" to minimize non-JSON values.`,
+          `BigInt at ${frame.at} is not JSON-compatible. Use mode: "js" to minimize non-JSON values.`,
         );
       }
-      return;
+      continue;
     }
     if (type === "function") {
       throw new ShrinkUnsupportedInputError(
-        `Function at ${at} cannot be minimized. Replace it with data your predicate can rebuild.`,
+        `Function at ${frame.at} cannot be minimized. Replace it with data your predicate can rebuild.`,
       );
     }
     if (type === "symbol") {
-      throw new ShrinkUnsupportedInputError(`Symbol at ${at} cannot be minimized.`);
+      throw new ShrinkUnsupportedInputError(`Symbol at ${frame.at} cannot be minimized.`);
     }
 
     const object = node as object;
-    if (seen.has(object)) {
+    if (ancestors.has(object)) {
       if (mode === "json") {
         throw new ShrinkUnsupportedInputError(
-          `Circular reference detected at ${at}. JSON cannot represent cycles; use mode: "js" instead.`,
+          `Circular reference detected at ${frame.at}. JSON cannot represent cycles; use mode: "js" instead.`,
         );
       }
-      return;
+      continue;
     }
-    seen.add(object);
+    if (validated.has(object)) continue;
+    validated.add(object);
+
+    if (frame.depth >= maxDepth) {
+      throw new ShrinkUnsupportedInputError(
+        `Input nests deeper than limits.maxInputDepth (${maxDepth} levels) at ${frame.at}. ` +
+          "Flatten the data or raise the limit.",
+      );
+    }
 
     if (Array.isArray(object)) {
-      for (let i = 0; i < object.length; i += 1) visit(object[i], `${at}[${i}]`);
-      return;
+      ancestors.add(object);
+      stack.push({ node: null, at: frame.at, depth: frame.depth, exit: object });
+      for (let i = object.length - 1; i >= 0; i -= 1) {
+        stack.push({ node: object[i], at: `${frame.at}[${i}]`, depth: frame.depth + 1 });
+      }
+      continue;
     }
     if (object instanceof Date || object instanceof RegExp) {
       if (mode === "json") {
         throw new ShrinkUnsupportedInputError(
-          `${object.constructor.name} at ${at} is not JSON-compatible. Use mode: "js".`,
+          `${object.constructor.name} at ${frame.at} is not JSON-compatible. Use mode: "js".`,
         );
       }
-      return;
+      continue;
     }
     if (object instanceof Map || object instanceof Set) {
       if (mode === "json") {
         throw new ShrinkUnsupportedInputError(
-          `${object.constructor.name} at ${at} is not JSON-compatible. Use mode: "js".`,
+          `${object.constructor.name} at ${frame.at} is not JSON-compatible. Use mode: "js".`,
         );
       }
-      return;
+      continue;
     }
     if (hasBuffer && Buffer.isBuffer(object)) {
       if (mode === "json") {
-        throw new ShrinkUnsupportedInputError(`Buffer at ${at} is not JSON-compatible. Use mode: "js".`);
+        throw new ShrinkUnsupportedInputError(
+          `Buffer at ${frame.at} is not JSON-compatible. Use mode: "js".`,
+        );
       }
-      return;
+      continue;
     }
     if (ArrayBuffer.isView(object) || object instanceof ArrayBuffer) {
       if (mode === "json") {
         throw new ShrinkUnsupportedInputError(
-          `Binary value at ${at} is not JSON-compatible. Use mode: "js".`,
+          `Binary value at ${frame.at} is not JSON-compatible. Use mode: "js".`,
         );
       }
-      return;
+      continue;
     }
 
     const proto = Object.getPrototypeOf(object) as object | null;
     if (mode === "json" && !isPlainPrototype(proto)) {
       throw new ShrinkUnsupportedInputError(
-        `Instance of ${(proto?.constructor as { name?: string } | undefined)?.name ?? "unknown class"} at ${at} is not JSON-compatible. Use mode: "js".`,
+        `Instance of ${(proto?.constructor as { name?: string } | undefined)?.name ?? "unknown class"} at ${frame.at} is not JSON-compatible. Use mode: "js".`,
       );
     }
 
-    for (const key of Object.keys(object)) {
-      visit((object as Record<string, unknown>)[key], `${at}.${key}`);
+    ancestors.add(object);
+    stack.push({ node: null, at: frame.at, depth: frame.depth, exit: object });
+    const keys = Object.keys(object);
+    for (let i = keys.length - 1; i >= 0; i -= 1) {
+      const key = keys[i] as string;
+      stack.push({
+        node: (object as Record<string, unknown>)[key],
+        at: `${frame.at}.${key}`,
+        depth: frame.depth + 1,
+      });
     }
-  };
-
-  visit(value, path);
+  }
 }
